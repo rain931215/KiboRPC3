@@ -10,7 +10,6 @@ import org.opencv.aruco.Aruco;
 import org.opencv.core.Mat;
 import org.opencv.core.Scalar;
 import org.opencv.imgproc.Imgproc;
-import org.ros.RosCore;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -28,6 +27,15 @@ public class YourService extends KiboRpcService {
     public static final boolean PRINT_ROBOT_POSITION = true;
     public static final boolean SAVE_IMAGE = true;
 
+    public static final int MAX_RETRY_SET_LASER = 5;
+
+    public static final Point point1 = new Point(10.71f, -7.7f, 4.48f);
+    public static final Point point2 = new Point(11.27460, -9.92284, 5.29881);
+    public static final Point pointGoal = new Point(11.27460, -7.89178, 4.96538);
+    public static final Quaternion point1Quaternion = new Quaternion(0f, 0.707f, 0f, 0.707f);
+    public static final Quaternion point2Quaternion = new Quaternion(0f, 0, -0.707f, 0.707f);
+    public static final Quaternion pointGoalQuaternion = new Quaternion(0, 0, -0.707f, 0.707f);
+
     private Point lastPoint;
     private Quaternion lastQuaternion;
 
@@ -36,87 +44,67 @@ public class YourService extends KiboRpcService {
         // the mission starts
         api.startMission();
 
-        // move to a point
-        Point point1 = new Point(10.71f, -7.7f, 4.48f);
-        Quaternion quaternion = new Quaternion(0f, 0.707f, 0f, 0.707f);
-        moveToWithRetry(point1, quaternion);
+        // move to point 1
+        moveToWithRetry(point1, point1Quaternion);
+
+        sleep(5000);
 
         // report point1 arrival
         api.reportPoint1Arrival();
 
-        if (SAVE_IMAGE) {
-            Bitmap image = api.getBitmapNavCam();
-            Canvas canvas = new Canvas(image);
-            Paint paint = new Paint();
-            paint.setStrokeWidth(2);
-            paint.setColor(Color.GREEN);
-            canvas.drawCircle(640, 480, 2, paint);
-            canvas.drawCircle(640, 440, 2, paint);
-            api.saveBitmapImage(image, "NavCam_original");
-            image.recycle();
-        }
+        // save target 1 original picture
+        saveImage("NavCam_target1_original.png");
 
+        // align to target 1
         alignmentPoint1();
 
-        // irradiate the laser
-        api.laserControl(true);
-        // take target1 snapshots
+        // turn on laser
+        setLaser(true);
+
+        // take target 1 snapshots
         api.takeTarget1Snapshot();
-        if (SAVE_IMAGE) {
-            Bitmap image = api.getBitmapNavCam();
-            Canvas canvas = new Canvas(image);
-            Paint paint = new Paint();
-            paint.setStrokeWidth(2);
-            paint.setColor(Color.GREEN);
-            canvas.drawCircle(640, 480, 2, paint);
-            api.saveBitmapImage(image, "NavCam_laser1");
-            image.recycle();
-        }
-        // turn the laser off
-        api.laserControl(false);
 
+        // save target 1 laser image
+        saveImage("NavCam_target1_laser.png");
 
+        // turn off laser
+        setLaser(false);
 
-        Quaternion quaternion2 = new Quaternion(0, 0, -0.707f, 0.707f);
-
+        // move to point 2
         Point pointTemp;
         pointTemp = new Point(11.2, -8.2, 4.5);
-        moveToWithRetry(pointTemp, quaternion2);
+        moveToWithRetry(pointTemp, point2Quaternion);
         pointTemp = new Point(11.2, -9.5, 4.5);
-        moveToWithRetry(pointTemp, quaternion2);
+        moveToWithRetry(pointTemp, point2Quaternion);
+        moveToWithRetry(point2, point2Quaternion);
 
-        Point point2 = new Point(11.27460, -9.92284, 5.29881);
-        moveToWithRetry(point2, quaternion2);
+        // wait 2 seconds before taking picture from NavCam
+        //sleep(5000);
 
+        // save target 2 original picture
+        saveImage("NavCam_target2_original.png");
+
+        // align to target 2
         alignmentPoint2();
 
-        // irradiate the laser
-        api.laserControl(true);
-        // take target2 snapshots
+        // turn on laser
+        setLaser(true);
+
+        // take target 2 snapshots
         api.takeTarget2Snapshot();
-        if (SAVE_IMAGE) {
-            Bitmap image = api.getBitmapNavCam();
-            Canvas canvas = new Canvas(image);
-            Paint paint = new Paint();
-            paint.setStrokeWidth(2);
-            paint.setColor(Color.GREEN);
-            canvas.drawCircle(640, 480, 2, paint);
-            api.saveBitmapImage(image, "NavCam_laser2");
-            image.recycle();
-        }
-        // turn the laser off
-        api.laserControl(false);
 
+        // save target 2 laser picture
+        saveImage("NavCam_target2_laser.png");
+
+        // turn off laser
+        setLaser(false);
+
+        // move to point goal
         pointTemp = new Point(11.05, -9.5, 4.96538);
-        moveToWithRetry(pointTemp, quaternion2);
-
-        pointTemp = new Point(11, -9.1 , 4.96538);
-        moveToWithRetry(pointTemp, quaternion2);
-
-
-        Point pointGoal = new Point(11.27460, -7.89178, 4.96538);
-        Quaternion quaternionGoal = new Quaternion(0, 0, -0.707f, 0.707f);
-        moveToWithRetry(pointGoal, quaternionGoal);
+        moveToWithRetry(pointTemp, point2Quaternion);
+        pointTemp = new Point(11, -9.1, 4.96538);
+        moveToWithRetry(pointTemp, point2Quaternion);
+        moveToWithRetry(pointGoal, pointGoalQuaternion);
 
         // send mission completion
         api.reportMissionCompletion();
@@ -154,32 +142,28 @@ public class YourService extends KiboRpcService {
         return result.hasSucceeded();
     }
 
-    private boolean moveToPointWithRetry(Point point) {
-        return moveToWithRetry(point, lastQuaternion);
-    }
-
-    private boolean moveToQuaternionWithRetry(Quaternion quaternion) {
-        return moveToWithRetry(lastPoint, quaternion);
-    }
-
     private void alignmentPoint1() {
         List<Mat> arucoCorners = new ArrayList<>();
         Mat arucoIDs = new Mat();
-
+        Mat navCamMat = api.getMatNavCam();
         final int LOOP_MAX = 5;
         int loopCounter = 0;
+
+        Aruco.detectMarkers(
+                navCamMat,
+                Aruco.getPredefinedDictionary(Aruco.DICT_5X5_250),
+                arucoCorners,
+                arucoIDs);
+        ++loopCounter;
         while (arucoIDs.size().area() == 0 && loopCounter < LOOP_MAX) {
-            moveToWithRetry(lastPoint, lastQuaternion);
-            Mat navCamMat = api.getMatNavCam();
+            moveToWithRetry(point1, point1Quaternion);
+            navCamMat = api.getMatNavCam();
             Aruco.detectMarkers(
                     navCamMat,
                     Aruco.getPredefinedDictionary(Aruco.DICT_5X5_250),
                     arucoCorners,
                     arucoIDs);
             ++loopCounter;
-//            if (SAVE_IMAGE) {
-//                api.saveMatImage(navCamMat, "NavCam_" + loopCounter);
-//            }
         }
         if (arucoIDs.size().area() == 0) return;
 
@@ -208,7 +192,7 @@ public class YourService extends KiboRpcService {
             canvas.drawCircle(640, 480, 2, paint);
             paint.setColor(Color.BLUE);
             canvas.drawCircle((float) targetPixelX, (float) targetPixelY, 2, paint);
-            api.saveBitmapImage(image, "NavCam_alignment1");
+            api.saveBitmapImage(image, "NavCam_target1_alignment1.png");
             image.recycle();
         }
 
@@ -220,37 +204,32 @@ public class YourService extends KiboRpcService {
         dX /= 8;
         dY /= 8;
 
-        float zOffset = 0.15f;
+        dX -= 9.94;
+        dY += 2.85;
 
-        double roll = 0;
-        double pitch = -Math.atan2(dY, 110 + zOffset * 100) + 0.5 * Math.PI;
-        double yaw = Math.atan2(dX, 110 + zOffset * 100);
-
-
-        Point point = new Point(10.71f, -7.7f, 4.48f + zOffset);
-        moveToWithRetry(point, euler_to_quaternion(roll, pitch, yaw));
+        Point point = new Point(point1.getX() + dY / 100.0, point1.getY() + dX / 100.0, point1.getZ());
+        moveToWithRetry(point, new Quaternion(0f, 0.707f, 0f, 0.707f));
     }
 
     private void alignmentPoint2() {
-        float yOffset = 0f;
-        Point lastPoint = new Point(11.27460, -9.92284 + yOffset, 5.29881);
-        final int steps = 3;
-        for (int step=0;step<steps;step++){
-            Point currentPoint = api.getRobotKinematics().getPosition();
+        Point lastPoint = new Point(point2.getX(), point2.getY(), point2.getZ());
+        final int steps = 2;
+        for (int step = 0; step < steps; step++) {
+            sleep(5000);
+            Mat navCamMat = api.getMatNavCam();
 
             List<Mat> arucoCorners = new ArrayList<>();
             Mat arucoIDs = new Mat();
 
             final int LOOP_MAX = 5;
             int loopCounter = 0;
-            Mat navCamMat = api.getMatNavCam();
             Aruco.detectMarkers(
                     navCamMat,
                     Aruco.getPredefinedDictionary(Aruco.DICT_5X5_250),
                     arucoCorners,
                     arucoIDs);
             while (arucoIDs.size().area() == 0 && loopCounter < LOOP_MAX) {
-                moveToWithRetry(currentPoint, lastQuaternion);
+                moveToWithRetry(lastPoint, point2Quaternion);
                 navCamMat = api.getMatNavCam();
                 Aruco.detectMarkers(
                         navCamMat,
@@ -258,14 +237,8 @@ public class YourService extends KiboRpcService {
                         arucoCorners,
                         arucoIDs);
                 ++loopCounter;
-//            if (SAVE_IMAGE) {
-//                api.saveMatImage(navCamMat, "NavCam_" + loopCounter);
-//            }
             }
-            if (arucoIDs.size().area() == 0){
-                navCamMat.release();
-                return;
-            }
+            if (arucoIDs.size().area() == 0) continue;
 
             double targetPixelX = 0;
             double targetPixelY = 0;
@@ -283,37 +256,34 @@ public class YourService extends KiboRpcService {
             targetPixelX /= 16;
             targetPixelY /= 16;
 
-            //Mat navCamGrayMat = navCamMat.clone();
-            //Imgproc.cvtColor(navCamMat, navCamGrayMat, Imgproc.COLOR_BGR2GRAY);
-            Mat navCamGrayCroppedMat = navCamMat.submat((int)targetPixelY - 60, (int)targetPixelY + 60, (int)targetPixelX-60, (int)targetPixelX+60);
+            Mat navCamGrayCroppedMat = navCamMat.submat((int) targetPixelY - 60, (int) targetPixelY + 60, (int) targetPixelX - 60, (int) targetPixelX + 60);
             Imgproc.threshold(navCamGrayCroppedMat, navCamGrayCroppedMat, 70, 255, Imgproc.THRESH_BINARY);
             Mat circles = new Mat();
-            //Imgproc.medianBlur(navCamGrayCroppedMat, navCamGrayCroppedMat, 11);
-            Imgproc.HoughCircles(navCamGrayCroppedMat, circles, Imgproc.HOUGH_GRADIENT, 1, 20, 60, 60);
-            double[] minCircle = {0,0};
+            Imgproc.HoughCircles(navCamGrayCroppedMat, circles, Imgproc.HOUGH_GRADIENT, 1, 20, 50, 40);
+            double[] minCircle = {0, 0};
             int minRadius = 1000;
-            for (int col = 0; col< circles.cols();col++){
+            for (int col = 0; col < circles.cols(); col++) {
                 double[] circle = circles.get(0, col);
                 int radius = (int) Math.round(circle[2]);
-                Log.i("Kibo", "circle x="+circle[0]+" y="+circle[1]+" radius="+radius);
-                if (radius<=minRadius){
+                Log.i("Kibo", "find circle x=" + circle[0] + " y=" + circle[1] + " radius=" + radius);
+                if (circle[0]!=0 && circle[1]!=0 && radius <= minRadius) {
                     minCircle[0] = circle[0];
                     minCircle[1] = circle[1];
                     minRadius = radius;
                 }
             }
-            Log.i("Kibo", "target circle x="+minCircle[0]);
-            Log.i("Kibo", "target circle y="+minCircle[1]);
-            Log.i("Kibo", "target circle radius="+minRadius);
+            Log.i("Kibo", "target circle x=" + minCircle[0]);
+            Log.i("Kibo", "target circle y=" + minCircle[1]);
+            Log.i("Kibo", "target circle radius=" + minRadius);
             Imgproc.circle(navCamGrayCroppedMat, new org.opencv.core.Point(minCircle[0], minCircle[1]), 3, new Scalar(255, 0, 255), 2, 0);
-            if (SAVE_IMAGE){
-                api.saveMatImage(navCamGrayCroppedMat, "NavCam_croppedPoint2_"+step);
+            if (SAVE_IMAGE) {
+                api.saveMatImage(navCamGrayCroppedMat, "NavCam_target2_cropped" + step + ".png");
             }
 
-            if (minRadius!=1000){
-                targetPixelX += minCircle[0]-60;
-                targetPixelY += minCircle[1]-60;
-            }
+            if (minRadius == 1000) continue;
+
+            targetPixelX += minCircle[0] - 60;
+            targetPixelY += minCircle[1] - 60;
 
 
             if (SAVE_IMAGE) {
@@ -322,39 +292,36 @@ public class YourService extends KiboRpcService {
                 Paint paint = new Paint();
                 paint.setStrokeWidth(2);
                 paint.setColor(Color.GREEN);
-                canvas.drawCircle(640, 480, 2, paint);
-
-                //canvas.drawCircle((float) (targetPixelX-101.25), (float) targetPixelY, 2, paint);
+                canvas.drawCircle(640, 480, 4, paint);
                 paint.setColor(Color.BLUE);
-                canvas.drawCircle((float) targetPixelX, (float) targetPixelY, 2, paint);
-                api.saveBitmapImage(image, "NavCam_alignmentPoint2_"+step);
+                canvas.drawCircle((float) targetPixelX, (float) targetPixelY, 4, paint);
+                api.saveBitmapImage(image, "NavCam_alignmentPoint2_" + step + ".png");
                 image.recycle();
             }
 
             double dX = targetPixelX - 640;
             double dY = targetPixelY - 480;
 
-
             // 9 pixel is 1 cm
             dX /= 9;
             dY /= 9;
 
-            if (Math.abs(dX)<=0.4 && Math.abs(dY)<=0.4) continue;
+            // fix the distance between camera and laser
+            dX -= 9.94;
+            dY += 2.85;
 
-            double roll = -Math.atan2(dY, 75 + yOffset * 100);
-            double pitch = 0f;
-            double yaw = Math.atan2(dX, 75 + yOffset * 100) - 0.5 * Math.PI;
+            // fix custom distance offset
+            dX -= 0.4;
+            dY -= 0.3;
 
-            Point point = new Point(11.27460, -9.92284 + yOffset, 5.29881);
+//            double roll = -Math.atan2(dY, 75 + yOffset * 100);
+//            double pitch = 0f;
+//            double yaw = Math.atan2(dX, 75 + yOffset * 100) - 0.5 * Math.PI;
 
             // 平移不旋轉
-            point = new Point(currentPoint.getX()+dX/100, lastPoint.getY(), api.getRobotKinematics().getPosition().getZ()+dY/100);
-            roll = 0;
-            pitch = 0;
-            yaw = -0.5 * Math.PI;
+            Point point = new Point(lastPoint.getX() + dX / 100, point2.getY(), lastPoint.getZ() + dY / 100);
 
-            moveToWithRetry(point, euler_to_quaternion(roll, pitch, yaw));
-
+            moveToWithRetry(point, point2Quaternion);
             lastPoint = point;
         }
 
@@ -378,6 +345,36 @@ public class YourService extends KiboRpcService {
 
         return new Quaternion(qx, qy, qz, qw);
 
+    }
+
+    public Result setLaser(boolean enable) {
+        Result laserResult = api.laserControl(enable);
+        int loop = 0;
+        while (!laserResult.hasSucceeded() && loop < MAX_RETRY_SET_LASER) {
+            laserResult = api.laserControl(enable);
+            ++loop;
+        }
+        return laserResult;
+    }
+
+    public void saveImage(String name) {
+        if (!SAVE_IMAGE) return;
+        Bitmap image = api.getBitmapNavCam();
+        Canvas canvas = new Canvas(image);
+        Paint paint = new Paint();
+        paint.setStrokeWidth(2);
+        paint.setColor(Color.GREEN);
+        canvas.drawCircle(640, 480, 2, paint);
+        api.saveBitmapImage(image, name);
+        image.recycle();
+    }
+
+    public void sleep(long millis){
+        try {
+            Thread.sleep(millis);
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        }
     }
 }
 
